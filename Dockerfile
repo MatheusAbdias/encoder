@@ -1,34 +1,48 @@
-FROM golang:1.14-alpine3.11
-ENV PATH="$PATH:/bin/bash" \
-  BENTO4_BIN="/opt/bento4/bin" \
-  PATH="$PATH:/opt/bento4/bin"
+FROM  alpine:3.18.0 as builder
 
-# FFMPEG
-RUN apk add --update ffmpeg bash curl make
+ARG BENTO4_VERSION=v1.6.0-640
 
-# Install Bento
+RUN apk update && apk add --no-cache \
+  ca-certificates=20230506-r0 \
+  bash=5.2.15-r5 \
+  python3=3.11.4-r0 \
+  make=4.4.1-r1 \
+  cmake=3.26.5-r0 \
+  gcc=12.2.1_git20220924-r10  \
+  g++=12.2.1_git20220924-r10 \
+  git=2.40.1-r0
+
 WORKDIR /tmp/bento4
-ENV BENTO4_BASE_URL="http://zebulon.bok.net/Bento4/source/" \
-  BENTO4_VERSION="1-5-0-615" \
-  BENTO4_CHECKSUM="5378dbb374343bc274981d6e2ef93bce0851bda1" \
-  BENTO4_TARGET="" \
-  BENTO4_PATH="/opt/bento4" \
-  BENTO4_TYPE="SRC"
-# download and unzip bento4
-RUN apk add --update --upgrade curl python unzip bash gcc g++ scons && \
-  curl -O -s ${BENTO4_BASE_URL}/Bento4-${BENTO4_TYPE}-${BENTO4_VERSION}${BENTO4_TARGET}.zip && \
-  sha1sum -b Bento4-${BENTO4_TYPE}-${BENTO4_VERSION}${BENTO4_TARGET}.zip | grep -o "^$BENTO4_CHECKSUM " && \
-  mkdir -p ${BENTO4_PATH} && \
-  unzip Bento4-${BENTO4_TYPE}-${BENTO4_VERSION}${BENTO4_TARGET}.zip -d ${BENTO4_PATH} && \
-  rm -rf Bento4-${BENTO4_TYPE}-${BENTO4_VERSION}${BENTO4_TARGET}.zip && \
-  apk del unzip && \
-  # don't do these steps if using binary install
-  cd ${BENTO4_PATH} && scons -u build_config=Release target=x86_64-unknown-linux && \
-  cp -R ${BENTO4_PATH}/Build/Targets/x86_64-unknown-linux/Release ${BENTO4_PATH}/bin && \
-  cp -R ${BENTO4_PATH}/Source/Python/utils ${BENTO4_PATH}/utils && \
-  cp -a ${BENTO4_PATH}/Source/Python/wrappers/. ${BENTO4_PATH}/bin
+RUN git clone https://github.com/axiomatic-systems/Bento4 /tmp/bento4 \ 
+  && git checkout $BENTO4_VERSION
+
+RUN rm -rf /tmp/bento4/cmakebuild \
+  && mkdir -p /tmp/bento4/cmakebuild/x86_64-unknown-linux 
+
+WORKDIR /tmp/bento4/cmakebuild/x86_64-unknown-linux
+RUN cmake -DCMAKE_BUILD_TYPE=Release ../.. && make
+
+
+WORKDIR /tmp/bento4
+RUN python3 Scripts/SdkPackager.py x86_64-unknown-linux . cmake \ 
+  && mkdir /opt/bento4 \
+  && mv /tmp/bento4/SDK/Bento4-SDK-*.x86_64-unknown-linux/* /opt/bento4
+
+
+
+FROM golang:1.21.0-alpine3.18
+ARG BENTO4_VERSION
+
+ENV PATH=/opt/bento4/bin:${PATH}
+
+RUN apk --no-cache add ca-certificates=20230506-r0 \
+  bash=5.2.15-r5 \
+  python3=3.11.4-r0 \
+  libstdc++=12.2.1_git20220924-r10 \
+  && rm -rf /var/cache/apk/*
+
+COPY --from=builder /opt/bento4 /opt/bento4
 
 WORKDIR /go/src
 
-#vamos mudar para o endpoint correto. Usando top apenas para segurar o processo rodando
-ENTRYPOINT [ "top" ]
+ENTRYPOINT [ "tail", "-f", "/dev/null" ]
