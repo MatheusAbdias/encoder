@@ -28,8 +28,6 @@ RUN python3 Scripts/SdkPackager.py x86_64-unknown-linux . cmake \
   && mkdir /opt/bento4 \
   && mv /tmp/bento4/SDK/Bento4-SDK-*.x86_64-unknown-linux/* /opt/bento4
 
-
-
 FROM golang:1.21.0-alpine3.18
 ARG BENTO4_VERSION
 
